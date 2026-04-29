@@ -1,239 +1,212 @@
-Approach & Solution Design
-    Tech Stack
-        Backend 
-            Python 3.11
-            FastAPI REST API
-            PostgreSQL
-            Pydantic for request/response validation
+# Library Management System
 
-        Frontend
-            Next.js / React
-            Axios or Fetch API
-            Tailwind CSS or simple CSS
+## Tech Stack
 
-        Deployment / Local Setup 
-            Docker Compose for PostgreSQL and backend
-            .env file for DB configuration
+**Backend**
+- Python 3.11
+- FastAPI (REST API)
+- PostgreSQL
+- Pydantic for request/response validation
 
-    Architecture Approach
+**Frontend**
+- Next.js / React
+- Axios or Fetch API
+- Tailwind CSS or simple CSS
 
-        The application will follow a Modular Monolith Architecture using Clean Architecture Principles.
+**Deployment / Local Setup**
+- Docker Compose for PostgreSQL and backend
+- `.env` file for DB configuration
 
-        Architecture Principles
-            Modular Monolith
-                Keeps the application simple and easy to deploy while maintaining module boundaries.
+---
 
-            Clean Architecture
-                Separates business logic from frameworks and infrastructure.
+## Architecture
 
-            Repository Pattern
-                Abstracts database operations for maintainability.
+Modular Monolith using Clean Architecture principles.
 
-            Service Layer Pattern
-                Business workflows are isolated from API routes.
+**Principles**
+- **Modular Monolith** — keeps the app simple and easy to deploy while maintaining module boundaries.
+- **Clean Architecture** — separates business logic from frameworks and infrastructure.
+- **Repository Pattern** — abstracts database operations for maintainability.
+- **Service Layer Pattern** — isolates business workflows from API routes.
 
-Appproch: 
-    1. The application will follow a Modular Monolith architecture to keep development simple, maintainable, and deployment-friendly.
-    2. We will use Clean Architecture principles to separate business logic from infrastructure and presentation layers.
-    3. The system will be divided into four layers: Presentation, Application, Domain, and Infrastructure.
-    4. The Presentation Layer will expose REST APIs using Python FastAPI for easy integration and API documentation.
-    5. The Application Layer will contain use-case-specific services such as book creation, borrowing, and returning workflows.
-    6. The Domain Layer will manage core business entities like Books, Members, and Borrowings, including validation rules.
-    7. The Infrastructure Layer will handle database interactions using PostgreSQL.
-    8. The application will implement the Repository Pattern to abstract database operations and improve code maintainability.
-    9. The frontend will be built using Next.js (React) to provide a simple and responsive user interface for library staff.
-    10. This approach ensures scalability, maintainability, testability, and faster development, making it ideal for the library management system.
+**Approach**
+1. Modular Monolith architecture to keep development simple, maintainable, and deployment-friendly.
+2. Clean Architecture to separate business logic from infrastructure and presentation.
+3. Four layers: Presentation, Application, Domain, Infrastructure.
+4. Presentation layer exposes REST APIs via FastAPI (auto Swagger docs).
+5. Application layer holds use-case services — book creation, borrow, return.
+6. Domain layer holds core entities — Books, Members, Borrowings — with validation rules.
+7. Infrastructure layer handles PostgreSQL interactions.
+8. Repository Pattern abstracts DB operations.
+9. Frontend in Next.js (React) — simple, responsive UI for staff.
+10. Result: scalable, maintainable, testable, fast to build.
 
+---
 
-------------------------- Functional Requirements -------------------------
+## Functional Requirements
 
-1. Book Management: 
-    Staff can add a new book.
-    Staff can update book details.
-    Staff can view book details.
-    Staff can list all books.
-    Staff can search books by title, author, ISBN, or category.
-    System tracks total copies and available copies.
-    System prevents borrowing if no copy is available.
-2. Member Management:
-    Staff can add a new member.
-    Staff can update member details.
-    Staff can view member details.
-    Staff can list all members.
-    Staff can search members by name, email, or phone.
-    System can mark members as active/inactive.
-    Inactive members cannot borrow books.
-3. Borrowing Management:
-    Staff can record when a member borrows a book.
-    System validates that the member exists and is active.
-    System validates that the book exists and has available copies.
-    System creates a borrowing record.
-    System reduces available book copies after borrowing.
-    System prevents the same active borrowing from being duplicated.
-4. Return Management:
-    Staff can record when a borrowed book is returned.
-    System updates the borrowing status to returned.
-    System records the return date.
-    System increases available book copies after return.
-    System prevents returning the same borrowing record twice.
-5. Borrowed Book Query:
-    Staff can view all active borrowed books.
-    Staff can view all books borrowed by a specific member.
-    Staff can view borrowing history.
-    Staff can filter borrowings by status: borrowed, returned, overdue.
-6. Overdue and Fine Management — Optional:
-    System can calculate overdue days.
-    System can calculate fine amount.
-    Staff can view overdue books.
-    Fine rule example: overdue days × ₹10.
-7. Frontend Requirements:
-    Staff can use a web UI to manage books.
-    Staff can use a web UI to manage members.
-    Staff can borrow and return books from the UI.
-    Staff can view active borrowings and overdue records.
+### 1. Book Management
+- Add, update, view, list books
+- Search by title, author, ISBN, or category
+- Track total and available copies
+- Block borrow if no copy available
 
+### 2. Member Management
+- Add, update, view, list members
+- Search by name, email, or phone
+- Mark active/inactive — inactive members can't borrow
 
+### 3. Borrowing
+- Record borrow events
+- Validate member exists and is active
+- Validate book exists and has available copies
+- Create borrowing record, decrement available copies
+- Prevent duplicate active borrowings
 
-------------------------- Non Functional  -------------------------
+### 4. Return
+- Record return event
+- Update status to returned, set return date
+- Increment available copies
+- Prevent double-returning the same record
 
-1. Performance:
-    API response time should be under 300 ms for normal operations.
-    List APIs should support pagination.
-    Search should work efficiently for books and members.
-    Database indexes should be added on ISBN, email, book title, member name, and borrowing status.
-2. Scalability: 
-    Backend should be stateless.
-    Application should support horizontal scaling.
-    Database schema should support growth in books, members, and borrowing records.
-    Pagination should be used for large lists.
-3. Reliability
-    Borrow and return operations should use database transactions.
-    Available book count should never become negative.
-    System should prevent duplicate or inconsistent borrowing records.
-    Proper rollback should happen if any database operation fails.
-4. Security
-    Environment variables should be used for database credentials.
-    API input should be validated.
-    Sensitive configuration should not be committed to Git.
-    CORS should allow only trusted frontend URLs.
-    Optional staff authentication can be added using JWT.
-5. Maintainability
-    Code should be modular.
-    Separate folders should be used for routes, models, schemas, and services.
-    Business logic should be placed in service layer.
-    Clear naming conventions should be followed.
-    README should explain setup and testing steps.
-6. Usability
-    Frontend should be simple and easy for library staff.
-    Forms should have clear validation messages.
-    Borrow and return actions should show success/error messages.
-    Dashboard should show quick summary cards.
-7. Data Integrity
-    ISBN should be unique.
-    Member email should be unique.
-    Foreign key relationships should be used.
-    Book copy count should be validated.
-    Active borrowing records should be properly linked to books and members.
-8. Observability
-    Application should log important operations.
-    Errors should be logged with meaningful messages.
-    Health check endpoint should be available.
-    API documentation should be available through Swagger UI.
-9. Portability
-    Application should run locally using Docker Compose.
-    PostgreSQL should be containerized.
-    Backend dependencies should be listed in requirements.txt.
-    Frontend dependencies should be listed in package.json.
-10. Testability
-    Core APIs should be testable using Swagger/Postman.
-    Unit tests should be added for borrow and return logic.
-    Integration tests can be added for database operations.
-    Sample curl commands should be provided in README.
+### 5. Borrowed Book Queries
+- List active borrowings
+- List borrowings by member
+- View borrowing history
+- Filter by status: borrowed / returned / overdue
 
+### 6. Overdue & Fine (Optional)
+- Calculate overdue days
+- Calculate fine amount (e.g. `overdue_days × ₹10`)
+- View overdue books
 
+### 7. Frontend
+- Manage books and members from UI
+- Borrow / return from UI
+- View active borrowings and overdue records
 
-API: 
-    Books APIs
-        /api/books POST
-            - Create a new book
+---
 
-        /api/books?page=1&page_size=10 GET
-            - List all books
-               
+## Non-Functional Requirements
 
-        /api/books/{book_id} GET
-            - Get book details by ID
+### Performance
+- API response < 300 ms for normal operations
+- Pagination on list APIs
+- Efficient search on books and members
+- Indexes on ISBN, email, book title, member name, borrowing status
 
-        /api/books/{book_id} PUT
-            - Update book details
+### Scalability
+- Stateless backend
+- Horizontally scalable
+- Schema supports growth in books, members, borrowings
+- Pagination for large lists
 
-        /api/books/{book_id} DELETE
-            - Soft delete a book
+### Reliability
+- Borrow/return operations wrapped in DB transactions
+- Available count must never go negative
+- Prevent duplicate or inconsistent borrowing records
+- Rollback on any DB failure
 
-        /api/books/search GET
-            - Search books by title, author, ISBN, or category
-    
-    Members APIs
-        /api/members POST
-            - Create a new member
+### Security
+- DB credentials via environment variables
+- Validate all API input
+- Don't commit sensitive config
+- CORS restricted to trusted frontend URLs
+- Optional: JWT-based staff auth
 
-        /api/members GET
-            - List all members
+### Maintainability
+- Modular code — separate folders for routes, models, schemas, services
+- Business logic in service layer
+- Consistent naming
+- README covers setup and testing
 
-        /api/members/{member_id} GET
-            - Get member details by ID
+### Usability
+- Simple UI for library staff
+- Clear validation messages on forms
+- Success/error feedback on borrow and return
+- Dashboard with summary cards
 
-        /api/members/{member_id} PUT
-            - Update member details
+### Data Integrity
+- Unique ISBN
+- Unique member email
+- Foreign key constraints
+- Validate copy counts
+- Active borrowings linked to valid book + member
 
-        /api/members/{member_id} DELETE
-            - Soft delete a member
+### Observability
+- Log important operations
+- Errors logged with meaningful messages
+- Health check endpoint
+- Swagger UI for API docs
 
-        /api/members/search GET
-            - Search members by name, email, or phone
+### Portability
+- Run locally via Docker Compose
+- Containerized PostgreSQL
+- `requirements.txt` for backend deps
+- `package.json` for frontend deps
 
-    Borrowing APIs
-        /api/borrowings/borrow POST
-            - Borrow a book
+### Testability
+- APIs testable via Swagger / Postman
+- Unit tests for borrow and return logic
+- Integration tests for DB operations
+- Sample `curl` commands in README
 
-        /api/borrowings/{borrowing_id}/return POST
-            - Return a borrowed book
+---
 
-        /api/borrowings GET
-            - List all borrowing records
+## API
 
-        /api/borrowings/active GET
-            - List all active borrowed books
+### Books
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST   | `/api/books` | Create a book |
+| GET    | `/api/books?page=1&page_size=10` | List books |
+| GET    | `/api/books/{book_id}` | Get book by ID |
+| PUT    | `/api/books/{book_id}` | Update book |
+| DELETE | `/api/books/{book_id}` | Soft delete book |
+| GET    | `/api/books/search` | Search by title, author, ISBN, category |
 
-        /api/borrowings/overdue GET
-            - List all overdue books
+### Members
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST   | `/api/members` | Create a member |
+| GET    | `/api/members` | List members |
+| GET    | `/api/members/{member_id}` | Get member by ID |
+| PUT    | `/api/members/{member_id}` | Update member |
+| DELETE | `/api/members/{member_id}` | Soft delete member |
+| GET    | `/api/members/search` | Search by name, email, phone |
 
-        /api/borrowings/{borrowing_id} GET
-            - Get borrowing details by ID
+### Borrowings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/borrowings/borrow` | Borrow a book |
+| POST | `/api/borrowings/{borrowing_id}/return` | Return a book |
+| GET  | `/api/borrowings` | List all borrowing records |
+| GET  | `/api/borrowings/active` | List active borrowings |
+| GET  | `/api/borrowings/overdue` | List overdue books |
+| GET  | `/api/borrowings/{borrowing_id}` | Get borrowing by ID |
 
+### Member Borrowings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/members/{member_id}/borrowed-books` | Active borrowings for member |
+| GET | `/api/members/{member_id}/borrowing-history` | Full history for member |
 
+### Dashboard
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/dashboard/summary` | Summary data |
+| GET | `/api/dashboard/recent-activities` | Recent borrow/return activity |
 
-    Member Borrowing APIs
-        /api/members/{member_id}/borrowed-books GET
-            - List all active borrowed books for a member
+### Health
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Health check |
 
-        /api/members/{member_id}/borrowing-history GET
-            - Get complete borrowing history for a member
+---
 
-    Dashboard APIs
-        /api/dashboard/summary GET
-            - Get dashboard summary data
+## Database
 
-        /api/dashboard/recent-activities GET
-            - Get recent borrow and return activities
-
-
-    Health APIs
-        /api/health GET
-            - Health check endpoint
-
-Database Design
-
+```sql
 CREATE TABLE books (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(255) NOT NULL,
@@ -246,7 +219,6 @@ CREATE TABLE books (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 
 CREATE TABLE members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -271,26 +243,24 @@ CREATE TABLE borrowings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
-CREATE INDEX idx_books_title ON books(title);
-CREATE INDEX idx_books_isbn ON books(isbn);
-CREATE INDEX idx_members_email ON members(email);
-CREATE INDEX idx_borrowings_status ON borrowings(status);
+CREATE INDEX idx_books_title         ON books(title);
+CREATE INDEX idx_books_isbn          ON books(isbn);
+CREATE INDEX idx_members_email       ON members(email);
+CREATE INDEX idx_borrowings_status   ON borrowings(status);
 CREATE INDEX idx_borrowings_member_id ON borrowings(member_id);
+```
 
+---
 
+## Seed Data
 
-Seed Data
+**Books**
+- Atomic Habits
+- Clean Code
+- Python Crash Course
 
-Books:
-    Atomic Habits
-    Clean Code
-    Python Crash Course
+**Members**
+- Rahul Sharma
+- Priya Mehta
 
-Members: 
-    Rahul Sharma
-    Priya Mehta
-
-Purpose: 
-    Faster local testing
-    Demo data
+Used for faster local testing and demos.
