@@ -1,19 +1,36 @@
 Approach & Solution Design
-1. Tech Stack
-    Backend 
-        Python 3.11
-        FastAPI REST API
-        PostgreSQL
-        Pydantic for request/response validation
+    Tech Stack
+        Backend 
+            Python 3.11
+            FastAPI REST API
+            PostgreSQL
+            Pydantic for request/response validation
 
-    Frontend
-        Next.js / React
-        Axios or Fetch API
-        Tailwind CSS or simple CSS
+        Frontend
+            Next.js / React
+            Axios or Fetch API
+            Tailwind CSS or simple CSS
 
-    Deployment / Local Setup 
-        Docker Compose for PostgreSQL and backend
-        .env file for DB configuration
+        Deployment / Local Setup 
+            Docker Compose for PostgreSQL and backend
+            .env file for DB configuration
+
+    Architecture Approach
+
+        The application will follow a Modular Monolith Architecture using Clean Architecture Principles.
+
+        Architecture Principles
+            Modular Monolith
+                Keeps the application simple and easy to deploy while maintaining module boundaries.
+
+            Clean Architecture
+                Separates business logic from frameworks and infrastructure.
+
+            Repository Pattern
+                Abstracts database operations for maintainability.
+
+            Service Layer Pattern
+                Business workflows are isolated from API routes.
 
 Appproch: 
     1. The application will follow a Modular Monolith architecture to keep development simple, maintainable, and deployment-friendly.
@@ -140,8 +157,9 @@ API:
         /api/books POST
             - Create a new book
 
-        /api/books GET
+        /api/books?page=1&page_size=10 GET
             - List all books
+               
 
         /api/books/{book_id} GET
             - Get book details by ID
@@ -252,3 +270,27 @@ CREATE TABLE borrowings (
     fine_amount NUMERIC(10,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+
+CREATE INDEX idx_books_title ON books(title);
+CREATE INDEX idx_books_isbn ON books(isbn);
+CREATE INDEX idx_members_email ON members(email);
+CREATE INDEX idx_borrowings_status ON borrowings(status);
+CREATE INDEX idx_borrowings_member_id ON borrowings(member_id);
+
+
+
+Seed Data
+
+Books:
+    Atomic Habits
+    Clean Code
+    Python Crash Course
+
+Members: 
+    Rahul Sharma
+    Priya Mehta
+
+Purpose: 
+    Faster local testing
+    Demo data
