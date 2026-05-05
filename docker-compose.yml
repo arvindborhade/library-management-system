@@ -8,8 +8,6 @@ services:
       POSTGRES_DB: library_db
       POSTGRES_USER: library_user
       POSTGRES_PASSWORD: library_pass
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -30,7 +28,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./backend:/app
+      - ./backend:/app 
 
   frontend:
     build: ./frontend

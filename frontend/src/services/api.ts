@@ -12,7 +12,8 @@ export const booksApi = {
   create: (data: object) => api.post("/api/books", data),
   update: (id: string, data: object) => api.put(`/api/books/${id}`, data),
   delete: (id: string) => api.delete(`/api/books/${id}`),
-  search: (q: string) => api.get(`/api/books/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, page = 1, pageSize = 10) =>
+    api.get(`/api/books/search?q=${encodeURIComponent(q)}&page=${page}&page_size=${pageSize}`),
 };
 
 // Members
@@ -23,7 +24,8 @@ export const membersApi = {
   create: (data: object) => api.post("/api/members", data),
   update: (id: string, data: object) => api.put(`/api/members/${id}`, data),
   delete: (id: string) => api.delete(`/api/members/${id}`),
-  search: (q: string) => api.get(`/api/members/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, page = 1, pageSize = 10) =>
+    api.get(`/api/members/search?q=${encodeURIComponent(q)}&page=${page}&page_size=${pageSize}`),
   borrowedBooks: (id: string) => api.get(`/api/members/${id}/borrowed-books`),
   borrowingHistory: (id: string) => api.get(`/api/members/${id}/borrowing-history`),
 };

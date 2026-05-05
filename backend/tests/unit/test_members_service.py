@@ -83,6 +83,17 @@ class TestListMembers:
         assert len(result.items) == 5
 
 
+class TestSearchMembers:
+    async def test_returns_paginated_search_result(self):
+        members = [make_member(name="Rahul"), make_member(name="Ravi")]
+        repo = make_repo(search=AsyncMock(return_value=(members, 2)))
+        svc = MemberService(repo)
+        result = await svc.search_members("ra", page=1, page_size=10)
+        assert result.total == 2
+        assert len(result.items) == 2
+        repo.search.assert_called_once_with("ra", 1, 10)
+
+
 class TestUpdateMember:
     async def test_updates_successfully(self):
         member = make_member(name="Old")

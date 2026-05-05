@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-from app.database import get_db
+from app.database import UnitOfWork, get_db
 from app.domain.books.repository import BookRepository
 from app.domain.members.repository import MemberRepository
 from app.domain.borrowings.repository import BorrowingRepository
@@ -30,4 +30,9 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
 
 @router.get("/recent-activities", response_model=list[BorrowingResponse])
 async def recent_activities(db: AsyncSession = Depends(get_db)):
-    return await BorrowingService(db).list_recent_activities(limit=10)
+    return await BorrowingService(
+        BorrowingRepository(db),
+        BookRepository(db),
+        MemberRepository(db),
+        UnitOfWork(db),
+    ).list_recent_activities(limit=10)

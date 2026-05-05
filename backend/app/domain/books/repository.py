@@ -11,7 +11,7 @@ class BookRepository:
     async def create(self, data: dict) -> Book:
         book = Book(**data)
         self.db.add(book)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(book)
         return book
 
@@ -32,26 +32,29 @@ class BookRepository:
         )
         return result.scalars().all(), total
 
-    async def search(self, query: str) -> list[Book]:
+    async def search(self, query: str, page: int, page_size: int) -> tuple[list[Book], int]:
+        offset = (page - 1) * page_size
         q = f"%{query}%"
-        result = await self.db.execute(
-            select(Book).where(
-                Book.is_active == True,
-                or_(Book.title.ilike(q), Book.author.ilike(q), Book.isbn.ilike(q), Book.category.ilike(q))
-            )
+        where = (
+            Book.is_active == True,
+            or_(Book.title.ilike(q), Book.author.ilike(q), Book.isbn.ilike(q), Book.category.ilike(q))
         )
-        return result.scalars().all()
+        count_q = await self.db.execute(select(func.count()).select_from(Book).where(*where))
+        result = await self.db.execute(
+            select(Book).where(*where).offset(offset).limit(page_size).order_by(Book.created_at.desc())
+        )
+        return result.scalars().all(), count_q.scalar_one()
 
     async def update(self, book: Book, data: dict) -> Book:
         for key, value in data.items():
             setattr(book, key, value)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(book)
         return book
 
     async def soft_delete(self, book: Book) -> Book:
         book.is_active = False
-        await self.db.commit()
+        await self.db.flush()
         return book
 
     async def count_active(self) -> int:

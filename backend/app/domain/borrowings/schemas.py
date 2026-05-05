@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 from app.domain.books.schemas import BookResponse
 from app.domain.members.schemas import MemberResponse
+from app.core.enums import BorrowingStatus
 
 class BorrowRequest(BaseModel):
     book_id: uuid.UUID
@@ -19,7 +20,7 @@ class BorrowingResponse(BaseModel):
     borrowed_at: datetime
     due_date: datetime
     returned_at: datetime | None
-    status: str
+    status: BorrowingStatus
     fine_amount: Decimal
     overdue_days: int = 0
     current_fine_amount: Decimal = Decimal("0")

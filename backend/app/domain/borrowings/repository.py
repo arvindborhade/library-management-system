@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.books.models import Book
 from app.domain.borrowings.models import Borrowing
 from app.domain.members.models import Member
+from app.core.enums import BorrowingStatus
 
 class BorrowingRepository:
     def __init__(self, db: AsyncSession):
@@ -15,7 +16,7 @@ class BorrowingRepository:
         borrowing = Borrowing(**data)
         self.db.add(borrowing)
         await self.db.flush()
-        await self.db.refresh(borrowing)
+        await self.db.refresh(borrowing, attribute_names=["book", "member"])
         return borrowing
 
     async def get_by_id(self, borrowing_id: uuid.UUID) -> Borrowing | None:
@@ -25,7 +26,11 @@ class BorrowingRepository:
     async def get_active_by_book_and_member(self, book_id: uuid.UUID, member_id: uuid.UUID) -> Borrowing | None:
         result = await self.db.execute(
             select(Borrowing).where(
-                and_(Borrowing.book_id == book_id, Borrowing.member_id == member_id, Borrowing.status == "BORROWED")
+                and_(
+                    Borrowing.book_id == book_id,
+                    Borrowing.member_id == member_id,
+                    Borrowing.status == BorrowingStatus.BORROWED,
+                )
             )
         )
         return result.scalar_one_or_none()
@@ -39,9 +44,9 @@ class BorrowingRepository:
     ) -> tuple[list[Borrowing], int]:
         offset = (page - 1) * page_size
         where = []
-        if status == "OVERDUE":
+        if status == BorrowingStatus.OVERDUE:
             now = datetime.now(timezone.utc).replace(tzinfo=None)
-            where.extend([Borrowing.status == "BORROWED", Borrowing.due_date < now])
+            where.extend([Borrowing.status == BorrowingStatus.BORROWED, Borrowing.due_date < now])
         elif status:
             where.append(Borrowing.status == status)
 
@@ -72,13 +77,13 @@ class BorrowingRepository:
         return result.scalars().all(), total
 
     async def list_active(self) -> list[Borrowing]:
-        result = await self.db.execute(select(Borrowing).where(Borrowing.status == "BORROWED"))
+        result = await self.db.execute(select(Borrowing).where(Borrowing.status == BorrowingStatus.BORROWED))
         return result.scalars().all()
 
     async def list_overdue(self) -> list[Borrowing]:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         result = await self.db.execute(
-            select(Borrowing).where(and_(Borrowing.status == "BORROWED", Borrowing.due_date < now))
+            select(Borrowing).where(and_(Borrowing.status == BorrowingStatus.BORROWED, Borrowing.due_date < now))
         )
         return result.scalars().all()
 
@@ -88,7 +93,7 @@ class BorrowingRepository:
 
     async def list_active_by_member(self, member_id: uuid.UUID) -> list[Borrowing]:
         result = await self.db.execute(
-            select(Borrowing).where(and_(Borrowing.member_id == member_id, Borrowing.status == "BORROWED"))
+            select(Borrowing).where(and_(Borrowing.member_id == member_id, Borrowing.status == BorrowingStatus.BORROWED))
         )
         return result.scalars().all()
 
@@ -96,17 +101,17 @@ class BorrowingRepository:
         for key, value in data.items():
             setattr(borrowing, key, value)
         await self.db.flush()
-        await self.db.refresh(borrowing)
+        await self.db.refresh(borrowing, attribute_names=["book", "member"])
         return borrowing
 
     async def count_active(self) -> int:
-        result = await self.db.execute(select(func.count()).select_from(Borrowing).where(Borrowing.status == "BORROWED"))
+        result = await self.db.execute(select(func.count()).select_from(Borrowing).where(Borrowing.status == BorrowingStatus.BORROWED))
         return result.scalar_one()
 
     async def count_overdue(self) -> int:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         result = await self.db.execute(
-            select(func.count()).select_from(Borrowing).where(and_(Borrowing.status == "BORROWED", Borrowing.due_date < now))
+            select(func.count()).select_from(Borrowing).where(and_(Borrowing.status == BorrowingStatus.BORROWED, Borrowing.due_date < now))
         )
         return result.scalar_one()
 

@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import Alert from "@/components/ui/Alert";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import LoadingState from "@/components/ui/LoadingState";
+import Modal from "@/components/ui/Modal";
 import { membersApi } from "@/services/api";
+import { getErrorMessage } from "@/services/errors";
 import type { Borrowing, Member, PaginatedResponse } from "@/types";
 
 type MemberForm = {
@@ -18,7 +23,8 @@ export default function MembersPage() {
   const [data, setData] = useState<PaginatedResponse<Member> | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<Member[] | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PaginatedResponse<Member> | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
   const [viewing, setViewing] = useState<Member | null>(null);
@@ -27,21 +33,92 @@ export default function MembersPage() {
   const [historyError, setHistoryError] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
+  const [pageError, setPageError] = useState("");
+  const [listLoading, setListLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Member | null>(null);
+  const [statusTarget, setStatusTarget] = useState<Member | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const load = async () => {
-    const res = await membersApi.list(page);
-    setData(res.data);
-    setSearchResults(null);
-    setSearch("");
+    setListLoading(true);
+    setPageError("");
+    try {
+      const res = await membersApi.list(page);
+      setData(res.data);
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Could not load members"));
+    } finally {
+      setListLoading(false);
+    }
   };
 
-  useEffect(() => { load(); }, [page]);
+  useEffect(() => {
+    if (!searchQuery) load();
+  }, [page, searchQuery]);
 
   const handleSearch = async () => {
-    if (!search.trim()) return load();
-    const res = await membersApi.search(search);
-    setSearchResults(res.data);
+    const query = search.trim();
+    if (!query) {
+      setSearchQuery("");
+      setSearchResults(null);
+      setPage(1);
+      return load();
+    }
+    setPage(1);
+    setSearchQuery(query);
+    setListLoading(true);
+    setPageError("");
+    try {
+      const res = await membersApi.search(query, 1);
+      setSearchResults(res.data);
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Search failed"));
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  const refreshCurrentView = async () => {
+    if (!searchQuery) {
+      await load();
+      return;
+    }
+    setListLoading(true);
+    setPageError("");
+    try {
+      const res = await membersApi.search(searchQuery, page);
+      setSearchResults(res.data);
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Search failed"));
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!searchQuery) return;
+    const loadSearchPage = async () => {
+      setListLoading(true);
+      setPageError("");
+      try {
+        const res = await membersApi.search(searchQuery, page);
+        setSearchResults(res.data);
+      } catch (e) {
+        setPageError(getErrorMessage(e, "Search failed"));
+      } finally {
+        setListLoading(false);
+      }
+    };
+    loadSearchPage();
+  }, [page, searchQuery]);
+
+  const clearSearch = () => {
+    setSearch("");
+    setSearchQuery("");
+    setSearchResults(null);
+    setPage(1);
+    load();
   };
 
   const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setError(""); setShowForm(true); };
@@ -66,63 +143,92 @@ export default function MembersPage() {
     try {
       const res = await membersApi.borrowingHistory(m.id);
       setHistory(res.data);
-    } catch (e: any) {
-      setHistoryError(e.response?.data?.detail ?? "Could not load borrowing history");
+    } catch (e) {
+      setHistoryError(getErrorMessage(e, "Could not load borrowing history"));
     } finally {
       setHistoryLoading(false);
     }
   };
 
   const handleSubmit = async () => {
+    if (loading) return;
     setError("");
+    const name = form.name.trim();
+    const email = form.email.trim();
+    const phone = form.phone.trim();
+    const address = form.address.trim();
+    if (!name) {
+      setError("Name is required");
+      return;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("Enter a valid email address");
+      return;
+    }
     setLoading(true);
     try {
       const payload: Record<string, string | boolean | undefined> = {
-        name: form.name,
-        email: form.email || undefined,
-        phone: form.phone || undefined,
-        address: form.address || undefined,
+        name,
+        email: email || undefined,
+        phone: phone || undefined,
+        address: address || undefined,
       };
       if (editing) payload.is_active = form.is_active;
       if (editing) await membersApi.update(editing.id, payload);
       else await membersApi.create(payload);
       setShowForm(false);
-      load();
-    } catch (e: any) {
-      setError(e.response?.data?.detail ?? "Something went wrong");
+      await refreshCurrentView();
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this member?")) return;
-    await membersApi.delete(id);
-    load();
-  };
-
-  const handleToggleActive = async (member: Member) => {
-    const nextStatus = !member.is_active;
+  const confirmDelete = async () => {
+    if (!deleteTarget || actionLoading) return;
+    setActionLoading(true);
+    setPageError("");
     try {
-      await membersApi.update(member.id, { is_active: nextStatus });
-      await load();
-      if (viewing?.id === member.id) setViewing({ ...member, is_active: nextStatus });
-    } catch (e: any) {
-      alert(e.response?.data?.detail ?? "Status update failed");
+      await membersApi.delete(deleteTarget.id);
+      setDeleteTarget(null);
+      await refreshCurrentView();
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Delete failed"));
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const members = searchResults ?? data?.items ?? [];
+  const confirmToggleActive = async () => {
+    if (!statusTarget || actionLoading) return;
+    const nextStatus = !statusTarget.is_active;
+    setActionLoading(true);
+    setPageError("");
+    try {
+      await membersApi.update(statusTarget.id, { is_active: nextStatus });
+      await refreshCurrentView();
+      if (viewing?.id === statusTarget.id) setViewing({ ...statusTarget, is_active: nextStatus });
+      setStatusTarget(null);
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Status update failed"));
+    }
+    setActionLoading(false);
+  };
+
+  const pageData = searchResults ?? data;
+  const members = pageData?.items ?? [];
   const activeBorrowings = history.filter((b) => b.status === "BORROWED");
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Members</h2>
-        <button onClick={openCreate} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+        <button disabled={loading || actionLoading} onClick={openCreate} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
           + Add Member
         </button>
       </div>
+      <Alert message={pageError} onDismiss={() => setPageError("")} />
 
       <div className="flex gap-2 mb-4">
         <input
@@ -132,8 +238,8 @@ export default function MembersPage() {
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
         />
-        <button onClick={handleSearch} className="bg-gray-100 border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Search</button>
-        {searchResults && <button onClick={load} className="text-sm text-blue-600 px-2">Clear</button>}
+        <button disabled={listLoading} onClick={handleSearch} className="bg-gray-100 border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-200 disabled:opacity-50">{listLoading ? "Searching..." : "Search"}</button>
+        {searchResults && <button disabled={listLoading} onClick={clearSearch} className="text-sm text-blue-600 px-2 disabled:opacity-50">Clear</button>}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -148,7 +254,10 @@ export default function MembersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {members.map((m) => (
+            {listLoading && (
+              <tr><td colSpan={5}><LoadingState label="Loading members..." /></td></tr>
+            )}
+            {!listLoading && members.map((m) => (
               <tr key={m.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">{m.name}</td>
                 <td className="px-4 py-3 text-gray-600">{m.email ?? "—"}</td>
@@ -159,47 +268,54 @@ export default function MembersPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 flex gap-2">
-                  <button onClick={() => openView(m)} className="text-gray-600 hover:underline text-xs">View</button>
-                  <button onClick={() => openEdit(m)} className="text-blue-600 hover:underline text-xs">Edit</button>
-                  <button onClick={() => handleToggleActive(m)} className="text-amber-600 hover:underline text-xs">
+                  <button disabled={actionLoading || loading} onClick={() => openView(m)} className="text-gray-600 hover:underline text-xs disabled:opacity-50">View</button>
+                  <button disabled={actionLoading || loading} onClick={() => openEdit(m)} className="text-blue-600 hover:underline text-xs disabled:opacity-50">Edit</button>
+                  <button disabled={actionLoading || loading} onClick={() => setStatusTarget(m)} className="text-amber-600 hover:underline text-xs disabled:opacity-50">
                     {m.is_active ? "Set Inactive" : "Activate"}
                   </button>
-                  <button onClick={() => handleDelete(m.id)} className="text-red-500 hover:underline text-xs">Delete</button>
+                  <button disabled={actionLoading || loading} onClick={() => setDeleteTarget(m)} className="text-red-500 hover:underline text-xs disabled:opacity-50">Delete</button>
                 </td>
               </tr>
             ))}
-            {members.length === 0 && (
+            {!listLoading && members.length === 0 && (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No members found.</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {!searchResults && data && (
+      {pageData && (
         <div className="flex justify-between items-center mt-4 text-sm text-gray-500">
-          <span>Total: {data.total}</span>
+          <span>Total: {pageData.total}</span>
           <div className="flex gap-2">
-            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border rounded disabled:opacity-40">Prev</button>
+            <button disabled={listLoading || page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border rounded disabled:opacity-40">Prev</button>
             <span className="px-2 py-1">Page {page}</span>
-            <button disabled={page * data.page_size >= data.total} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border rounded disabled:opacity-40">Next</button>
+            <button disabled={listLoading || page * pageData.page_size >= pageData.total} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border rounded disabled:opacity-40">Next</button>
           </div>
         </div>
       )}
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">{editing ? "Edit Member" : "Add Member"}</h3>
-            {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+      <Modal open={showForm} title={editing ? "Edit Member" : "Add Member"} onClose={loading ? undefined : () => setShowForm(false)}>
+            <Alert message={error} onDismiss={() => setError("")} />
             <div className="space-y-3">
               {TEXT_FIELDS.map((f) => (
-                <input
-                  key={f}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder={f.charAt(0).toUpperCase() + f.slice(1)}
-                  value={form[f]}
-                  onChange={(e) => setForm((prev) => ({ ...prev, [f]: e.target.value }))}
-                />
+                <div key={f}>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                    {f === "name" && <span className="text-red-500 ml-0.5">*</span>}
+                  </label>
+                  <input
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    placeholder={
+                      f === "email" ? "e.g. john@example.com" :
+                      f === "phone" ? "e.g. +91 9876543210" :
+                      `Enter ${f}`
+                    }
+                    value={form[f]}
+                    onChange={(e) => setForm((prev) => ({ ...prev, [f]: e.target.value }))}
+                  />
+                  {f === "email" && <p className="text-xs text-gray-500 mt-1">Optional — used to check for duplicates</p>}
+                </div>
               ))}
               {editing && (
                 <label className="flex items-center gap-2 text-sm text-gray-700">
@@ -213,18 +329,16 @@ export default function MembersPage() {
               )}
             </div>
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button disabled={loading} onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Cancel</button>
               <button onClick={handleSubmit} disabled={loading} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
                 {loading ? "Saving..." : "Save"}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
-      {viewing && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-3xl">
+      <Modal open={!!viewing} onClose={() => setViewing(null)} maxWidth="max-w-3xl">
+        {viewing && (
+          <>
             <div className="flex items-start justify-between gap-4 mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{viewing.name}</h3>
@@ -292,7 +406,7 @@ export default function MembersPage() {
             </div>
 
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => handleToggleActive(viewing)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+              <button disabled={actionLoading} onClick={() => setStatusTarget(viewing)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
                 {viewing.is_active ? "Set Inactive" : "Activate"}
               </button>
               <button onClick={() => { setViewing(null); openEdit(viewing); }} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
@@ -302,9 +416,30 @@ export default function MembersPage() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete member"
+        description={`Delete ${deleteTarget?.name ?? "this member"}? This member will be marked inactive.`}
+        confirmLabel="Delete"
+        tone="danger"
+        loading={actionLoading}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={!!statusTarget}
+        title={statusTarget?.is_active ? "Set member inactive" : "Activate member"}
+        description={`${statusTarget?.is_active ? "Set" : "Activate"} ${statusTarget?.name ?? "this member"}?`}
+        confirmLabel={statusTarget?.is_active ? "Set Inactive" : "Activate"}
+        loading={actionLoading}
+        onCancel={() => setStatusTarget(null)}
+        onConfirm={confirmToggleActive}
+      />
     </div>
   );
 }

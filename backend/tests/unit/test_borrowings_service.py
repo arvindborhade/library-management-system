@@ -10,6 +10,7 @@ from app.domain.borrowings.models import Borrowing
 from app.domain.books.models import Book
 from app.domain.members.models import Member
 from app.core.exceptions import NotFoundError, ConflictError, BadRequestError
+from app.core.enums import BorrowingStatus
 
 def make_member(is_active=True) -> Member:
     m = MagicMock(spec=Member)
@@ -33,7 +34,7 @@ def make_book(available_copies=2) -> Book:
     b.is_active = True
     return b
 
-def make_borrowing(status="BORROWED", due_date=None) -> Borrowing:
+def make_borrowing(status=BorrowingStatus.BORROWED, due_date=None) -> Borrowing:
     br = MagicMock(spec=Borrowing)
     br.id = uuid.uuid4()
     br.book_id = uuid.uuid4()
@@ -49,14 +50,10 @@ def make_borrowing(status="BORROWED", due_date=None) -> Borrowing:
     return br
 
 def make_service():
-    mock_db = AsyncMock()
-    mock_db.commit = AsyncMock()
-    mock_db.refresh = AsyncMock()
-    svc = BorrowingService(mock_db)
-    svc.repo = AsyncMock()
-    svc.book_repo = AsyncMock()
-    svc.member_repo = AsyncMock()
-    return svc
+    repo = AsyncMock()
+    book_repo = AsyncMock()
+    member_repo = AsyncMock()
+    return BorrowingService(repo, book_repo, member_repo)
 
 
 class TestBorrowBook:
@@ -69,15 +66,13 @@ class TestBorrowBook:
         svc.book_repo.get_by_id = AsyncMock(return_value=book)
         svc.repo.get_active_by_book_and_member = AsyncMock(return_value=None)
         svc.repo.create = AsyncMock(return_value=borrowing)
-        svc.db.refresh = AsyncMock(side_effect=lambda obj: None)
-
         req = BorrowRequest(
             book_id=book.id,
             member_id=member.id,
             due_date=datetime.now(timezone.utc) + timedelta(days=14),
         )
         result = await svc.borrow_book(req)
-        assert result.status == "BORROWED"
+        assert result.status == BorrowingStatus.BORROWED
         assert book.available_copies == 1
 
     async def test_raises_not_found_when_member_missing(self):
@@ -144,31 +139,29 @@ class TestReturnBook:
     async def test_returns_successfully_with_no_fine(self):
         svc = make_service()
         due = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)
-        borrowing = make_borrowing(status="BORROWED", due_date=due)
-        returned = make_borrowing(status="RETURNED")
+        borrowing = make_borrowing(status=BorrowingStatus.BORROWED, due_date=due)
+        returned = make_borrowing(status=BorrowingStatus.RETURNED)
         returned.fine_amount = Decimal("0")
         svc.repo.get_by_id = AsyncMock(return_value=borrowing)
         svc.repo.update = AsyncMock(return_value=returned)
         svc.book_repo.get_by_id = AsyncMock(return_value=make_book(available_copies=1))
-        svc.db.refresh = AsyncMock(side_effect=lambda obj: None)
 
         result = await svc.return_book(borrowing.id)
-        assert result.status == "RETURNED"
+        assert result.status == BorrowingStatus.RETURNED
         assert result.fine_amount == Decimal("0")
 
     async def test_calculates_fine_for_overdue_book(self):
         svc = make_service()
         overdue_days = 5
         due = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=overdue_days)
-        borrowing = make_borrowing(status="BORROWED", due_date=due)
+        borrowing = make_borrowing(status=BorrowingStatus.BORROWED, due_date=due)
         expected_fine = Decimal(overdue_days) * FINE_PER_DAY
 
-        returned = make_borrowing(status="RETURNED")
+        returned = make_borrowing(status=BorrowingStatus.RETURNED)
         returned.fine_amount = expected_fine
         svc.repo.get_by_id = AsyncMock(return_value=borrowing)
         svc.repo.update = AsyncMock(return_value=returned)
         svc.book_repo.get_by_id = AsyncMock(return_value=make_book())
-        svc.db.refresh = AsyncMock(side_effect=lambda obj: None)
 
         result = await svc.return_book(borrowing.id)
         assert result.fine_amount == expected_fine
@@ -181,7 +174,7 @@ class TestReturnBook:
 
     async def test_raises_conflict_when_already_returned(self):
         svc = make_service()
-        borrowing = make_borrowing(status="RETURNED")
+        borrowing = make_borrowing(status=BorrowingStatus.RETURNED)
         svc.repo.get_by_id = AsyncMock(return_value=borrowing)
         with pytest.raises(ConflictError, match="already returned"):
             await svc.return_book(borrowing.id)
@@ -189,14 +182,13 @@ class TestReturnBook:
     async def test_increments_available_copies_on_return(self):
         svc = make_service()
         due = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7)
-        borrowing = make_borrowing(status="BORROWED", due_date=due)
-        returned = make_borrowing(status="RETURNED")
+        borrowing = make_borrowing(status=BorrowingStatus.BORROWED, due_date=due)
+        returned = make_borrowing(status=BorrowingStatus.RETURNED)
         returned.fine_amount = Decimal("0")
         book = make_book(available_copies=0)
         svc.repo.get_by_id = AsyncMock(return_value=borrowing)
         svc.repo.update = AsyncMock(return_value=returned)
         svc.book_repo.get_by_id = AsyncMock(return_value=book)
-        svc.db.refresh = AsyncMock(side_effect=lambda obj: None)
 
         await svc.return_book(borrowing.id)
         assert book.available_copies == 1
@@ -206,13 +198,12 @@ class TestFineCalculation:
     async def test_fine_is_zero_when_returned_on_time(self):
         svc = make_service()
         due = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
-        borrowing = make_borrowing(status="BORROWED", due_date=due)
-        returned = make_borrowing(status="RETURNED")
+        borrowing = make_borrowing(status=BorrowingStatus.BORROWED, due_date=due)
+        returned = make_borrowing(status=BorrowingStatus.RETURNED)
         returned.fine_amount = Decimal("0")
         svc.repo.get_by_id = AsyncMock(return_value=borrowing)
         svc.repo.update = AsyncMock(return_value=returned)
         svc.book_repo.get_by_id = AsyncMock(return_value=make_book())
-        svc.db.refresh = AsyncMock(side_effect=lambda obj: None)
 
         result = await svc.return_book(borrowing.id)
         assert result.fine_amount == Decimal("0")
@@ -224,7 +215,7 @@ class TestFineCalculation:
         svc = make_service()
         overdue_days = 4
         due = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=overdue_days)
-        borrowing = make_borrowing(status="BORROWED", due_date=due)
+        borrowing = make_borrowing(status=BorrowingStatus.BORROWED, due_date=due)
 
         result = svc._to_response(borrowing)
 
@@ -239,7 +230,7 @@ class TestBorrowingFilters:
 
         result = await svc.list_borrowings(page=1, page_size=10, status="overdue")
 
-        svc.repo.list.assert_called_once_with(1, 10, "OVERDUE", None)
+        svc.repo.list.assert_called_once_with(1, 10, BorrowingStatus.OVERDUE, None)
         assert result.total == 0
 
     async def test_list_borrowings_rejects_unknown_status_filter(self):

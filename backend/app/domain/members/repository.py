@@ -11,7 +11,7 @@ class MemberRepository:
     async def create(self, data: dict) -> Member:
         member = Member(**data)
         self.db.add(member)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(member)
         return member
 
@@ -32,25 +32,26 @@ class MemberRepository:
         )
         return result.scalars().all(), total
 
-    async def search(self, query: str) -> list[Member]:
+    async def search(self, query: str, page: int, page_size: int) -> tuple[list[Member], int]:
+        offset = (page - 1) * page_size
         q = f"%{query}%"
+        where = (or_(Member.name.ilike(q), Member.email.ilike(q), Member.phone.ilike(q)),)
+        count_q = await self.db.execute(select(func.count()).select_from(Member).where(*where))
         result = await self.db.execute(
-            select(Member).where(
-                or_(Member.name.ilike(q), Member.email.ilike(q), Member.phone.ilike(q))
-            )
+            select(Member).where(*where).offset(offset).limit(page_size).order_by(Member.created_at.desc())
         )
-        return result.scalars().all()
+        return result.scalars().all(), count_q.scalar_one()
 
     async def update(self, member: Member, data: dict) -> Member:
         for key, value in data.items():
             setattr(member, key, value)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(member)
         return member
 
     async def soft_delete(self, member: Member) -> Member:
         member.is_active = False
-        await self.db.commit()
+        await self.db.flush()
         return member
 
     async def count_active(self) -> int:

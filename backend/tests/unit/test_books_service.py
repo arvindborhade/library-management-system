@@ -105,10 +105,12 @@ class TestListBooks:
 class TestSearchBooks:
     async def test_returns_matching_books(self):
         books = [make_book(title="Python Book"), make_book(title="Python Crash Course")]
-        repo = make_repo(search=AsyncMock(return_value=books))
+        repo = make_repo(search=AsyncMock(return_value=(books, 2)))
         svc = BookService(repo)
-        result = await svc.search_books("python")
-        assert len(result) == 2
+        result = await svc.search_books("python", page=1, page_size=10)
+        assert result.total == 2
+        assert len(result.items) == 2
+        repo.search.assert_called_once_with("python", 1, 10)
 
 
 class TestUpdateBook:

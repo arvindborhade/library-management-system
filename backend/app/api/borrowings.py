@@ -1,14 +1,23 @@
 import uuid
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
+from app.database import UnitOfWork, get_db
+from app.core.pagination import PaginationParams, get_pagination
+from app.domain.books.repository import BookRepository
+from app.domain.members.repository import MemberRepository
+from app.domain.borrowings.repository import BorrowingRepository
 from app.domain.borrowings.service import BorrowingService
 from app.domain.borrowings.schemas import BorrowRequest, BorrowingResponse, BorrowingListResponse
 
 router = APIRouter(prefix="/api/borrowings", tags=["Borrowings"])
 
 def get_service(db: AsyncSession = Depends(get_db)) -> BorrowingService:
-    return BorrowingService(db)
+    return BorrowingService(
+        BorrowingRepository(db),
+        BookRepository(db),
+        MemberRepository(db),
+        UnitOfWork(db),
+    )
 
 @router.post("/borrow", response_model=BorrowingResponse, status_code=201)
 async def borrow_book(data: BorrowRequest, svc: BorrowingService = Depends(get_service)):
@@ -28,13 +37,12 @@ async def list_overdue(svc: BorrowingService = Depends(get_service)):
 
 @router.get("", response_model=BorrowingListResponse)
 async def list_borrowings(
-    page: int = 1,
-    page_size: int = 10,
+    pagination: PaginationParams = Depends(get_pagination),
     status: str | None = Query(None),
     q: str | None = Query(None),
     svc: BorrowingService = Depends(get_service)
 ):
-    return await svc.list_borrowings(page, page_size, status, q)
+    return await svc.list_borrowings(pagination.page, pagination.page_size, status, q)
 
 @router.get("/{borrowing_id}", response_model=BorrowingResponse)
 async def get_borrowing(borrowing_id: uuid.UUID, svc: BorrowingService = Depends(get_service)):

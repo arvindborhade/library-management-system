@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import Alert from "@/components/ui/Alert";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import LoadingState from "@/components/ui/LoadingState";
+import Modal from "@/components/ui/Modal";
 import { booksApi } from "@/services/api";
+import { getErrorMessage } from "@/services/errors";
 import type { Book, PaginatedResponse } from "@/types";
 
 type BookForm = {
@@ -27,27 +32,98 @@ export default function BooksPage() {
   const [data, setData] = useState<PaginatedResponse<Book> | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<Book[] | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PaginatedResponse<Book> | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Book | null>(null);
   const [viewing, setViewing] = useState<Book | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
+  const [pageError, setPageError] = useState("");
+  const [listLoading, setListLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Book | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
-    const res = await booksApi.list(page);
-    setData(res.data);
-    setSearchResults(null);
-    setSearch("");
+    setListLoading(true);
+    setPageError("");
+    try {
+      const res = await booksApi.list(page);
+      setData(res.data);
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Could not load books"));
+    } finally {
+      setListLoading(false);
+    }
   };
 
-  useEffect(() => { load(); }, [page]);
+  useEffect(() => {
+    if (!searchQuery) load();
+  }, [page, searchQuery]);
 
   const handleSearch = async () => {
-    if (!search.trim()) return load();
-    const res = await booksApi.search(search);
-    setSearchResults(res.data);
+    const query = search.trim();
+    if (!query) {
+      setSearchQuery("");
+      setSearchResults(null);
+      setPage(1);
+      return load();
+    }
+    setPage(1);
+    setSearchQuery(query);
+    setListLoading(true);
+    setPageError("");
+    try {
+      const res = await booksApi.search(query, 1);
+      setSearchResults(res.data);
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Search failed"));
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  const refreshCurrentView = async () => {
+    if (!searchQuery) {
+      await load();
+      return;
+    }
+    setListLoading(true);
+    setPageError("");
+    try {
+      const res = await booksApi.search(searchQuery, page);
+      setSearchResults(res.data);
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Search failed"));
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!searchQuery) return;
+    const loadSearchPage = async () => {
+      setListLoading(true);
+      setPageError("");
+      try {
+        const res = await booksApi.search(searchQuery, page);
+        setSearchResults(res.data);
+      } catch (e) {
+        setPageError(getErrorMessage(e, "Search failed"));
+      } finally {
+        setListLoading(false);
+      }
+    };
+    loadSearchPage();
+  }, [page, searchQuery]);
+
+  const clearSearch = () => {
+    setSearch("");
+    setSearchQuery("");
+    setSearchResults(null);
+    setPage(1);
+    load();
   };
 
   const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setError(""); setShowForm(true); };
@@ -82,13 +158,34 @@ export default function BooksPage() {
   };
 
   const handleSubmit = async () => {
+    if (loading) return;
     setError("");
+    const title = form.title.trim();
+    const author = form.author.trim();
+    const isbn = form.isbn.trim();
+    const category = form.category.trim();
+
+    if (!title) {
+      setError("Title is required");
+      return;
+    }
+    if (!author) {
+      setError("Author is required");
+      return;
+    }
+    if (form.available_copies > form.total_copies) {
+      setError("Available copies cannot exceed total copies");
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
         ...form,
-        isbn: form.isbn || undefined,
-        category: form.category || undefined,
+        title,
+        author,
+        isbn: isbn || undefined,
+        category: category || undefined,
       };
       if (editing) {
         await booksApi.update(editing.id, payload);
@@ -96,30 +193,41 @@ export default function BooksPage() {
         await booksApi.create(payload);
       }
       setShowForm(false);
-      load();
-    } catch (e: any) {
-      setError(e.response?.data?.detail ?? "Something went wrong");
+      await refreshCurrentView();
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this book?")) return;
-    await booksApi.delete(id);
-    load();
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setPageError("");
+    try {
+      await booksApi.delete(deleteTarget.id);
+      setDeleteTarget(null);
+      await refreshCurrentView();
+    } catch (e) {
+      setPageError(getErrorMessage(e, "Delete failed"));
+    } finally {
+      setDeleting(false);
+    }
   };
 
-  const books = searchResults ?? data?.items ?? [];
+  const pageData = searchResults ?? data;
+  const books = pageData?.items ?? [];
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Books</h2>
-        <button onClick={openCreate} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+        <button onClick={openCreate} disabled={loading || deleting} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
           + Add Book
         </button>
       </div>
+      <Alert message={pageError} onDismiss={() => setPageError("")} />
 
       <div className="flex gap-2 mb-4">
         <input
@@ -129,11 +237,11 @@ export default function BooksPage() {
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
         />
-        <button onClick={handleSearch} className="bg-gray-100 border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">
-          Search
+        <button disabled={listLoading} onClick={handleSearch} className="bg-gray-100 border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-200 disabled:opacity-50">
+          {listLoading ? "Searching..." : "Search"}
         </button>
         {searchResults && (
-          <button onClick={load} className="text-sm text-blue-600 px-2">Clear</button>
+          <button disabled={listLoading} onClick={clearSearch} className="text-sm text-blue-600 px-2 disabled:opacity-50">Clear</button>
         )}
       </div>
 
@@ -150,7 +258,10 @@ export default function BooksPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {books.map((b) => (
+            {listLoading && (
+              <tr><td colSpan={6}><LoadingState label="Loading books..." /></td></tr>
+            )}
+            {!listLoading && books.map((b) => (
               <tr key={b.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">{b.title}</td>
                 <td className="px-4 py-3 text-gray-600">{b.author}</td>
@@ -162,78 +273,87 @@ export default function BooksPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 flex gap-2">
-                  <button onClick={() => setViewing(b)} className="text-gray-600 hover:underline text-xs">View</button>
-                  <button onClick={() => openEdit(b)} className="text-blue-600 hover:underline text-xs">Edit</button>
-                  <button onClick={() => handleDelete(b.id)} className="text-red-500 hover:underline text-xs">Delete</button>
+                  <button disabled={deleting || loading} onClick={() => setViewing(b)} className="text-gray-600 hover:underline text-xs disabled:opacity-50">View</button>
+                  <button disabled={deleting || loading} onClick={() => openEdit(b)} className="text-blue-600 hover:underline text-xs disabled:opacity-50">Edit</button>
+                  <button disabled={deleting || loading} onClick={() => setDeleteTarget(b)} className="text-red-500 hover:underline text-xs disabled:opacity-50">Delete</button>
                 </td>
               </tr>
             ))}
-            {books.length === 0 && (
+            {!listLoading && books.length === 0 && (
               <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No books found.</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {!searchResults && data && (
+      {pageData && (
         <div className="flex justify-between items-center mt-4 text-sm text-gray-500">
-          <span>Total: {data.total}</span>
+          <span>Total: {pageData.total}</span>
           <div className="flex gap-2">
-            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border rounded disabled:opacity-40">Prev</button>
+            <button disabled={listLoading || page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border rounded disabled:opacity-40">Prev</button>
             <span className="px-2 py-1">Page {page}</span>
-            <button disabled={page * data.page_size >= data.total} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border rounded disabled:opacity-40">Next</button>
+            <button disabled={listLoading || page * pageData.page_size >= pageData.total} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border rounded disabled:opacity-40">Next</button>
           </div>
         </div>
       )}
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">{editing ? "Edit Book" : "Add Book"}</h3>
-            {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+      <Modal open={showForm} title={editing ? "Edit Book" : "Add Book"} onClose={loading ? undefined : () => setShowForm(false)}>
+            <Alert message={error} onDismiss={() => setError("")} />
             <div className="space-y-3">
               {TEXT_FIELDS.map((f) => (
-                <input
-                  key={f}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder={f.charAt(0).toUpperCase() + f.slice(1)}
-                  value={form[f]}
-                  onChange={(e) => setForm((prev) => ({ ...prev, [f]: e.target.value }))}
-                />
+                <div key={f}>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    {f === "isbn" ? "ISBN" : f.charAt(0).toUpperCase() + f.slice(1)}
+                    {(f === "title" || f === "author") && <span className="text-red-500 ml-0.5">*</span>}
+                  </label>
+                  <input
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    placeholder={f === "isbn" ? "e.g. 978-3-16-148410-0" : `Enter ${f}`}
+                    value={form[f]}
+                    onChange={(e) => setForm((prev) => ({ ...prev, [f]: e.target.value }))}
+                  />
+                </div>
               ))}
-              <input
-                type="number"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                placeholder="Total Copies"
-                value={form.total_copies}
-                min={0}
-                onChange={(e) => handleTotalCopiesChange(e.target.value)}
-              />
-              <input
-                type="number"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                placeholder="Available Copies"
-                value={form.available_copies}
-                min={0}
-                max={form.total_copies}
-                onChange={(e) => handleAvailableCopiesChange(e.target.value)}
-              />
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Total Copies <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  value={form.total_copies}
+                  min={0}
+                  onChange={(e) => handleTotalCopiesChange(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Available Copies <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  value={form.available_copies}
+                  min={0}
+                  max={form.total_copies}
+                  onChange={(e) => handleAvailableCopiesChange(e.target.value)}
+                />
+                <p className="text-xs text-gray-500 mt-1">Cannot exceed Total Copies ({form.total_copies})</p>
+              </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+              <button disabled={loading} onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
                 Cancel
               </button>
               <button onClick={handleSubmit} disabled={loading} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
                 {loading ? "Saving..." : "Save"}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
-      {viewing && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+      <Modal open={!!viewing} onClose={() => setViewing(null)}>
+        {viewing && (
+          <>
             <div className="flex items-start justify-between gap-4 mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{viewing.title}</h3>
@@ -277,9 +397,20 @@ export default function BooksPage() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete book"
+        description={`Delete ${deleteTarget?.title ?? "this book"}? This hides the book from active lists.`}
+        confirmLabel="Delete"
+        tone="danger"
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
